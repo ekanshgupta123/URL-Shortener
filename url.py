@@ -18,11 +18,11 @@ app = Flask(__name__)
 auth = HTTPTokenAuth(scheme='Bearer')
 
 
-# From database.py 
+# Extending from database.py 
 db_manager = DatabaseManager('url_database.db')
 
 # Token and user for authentication purposes 
-# (note: this will not work in production purposes only for demo purposes)
+# (note: this will not work in production purposes, only for demo purposes)
 tokens = {
     "secret-token-1": "user1"
 }
@@ -41,15 +41,16 @@ def encode():
     original_url = request.json['url']
     short_url = db_manager.get_short_url(original_url)
     if not short_url:
-        short_url = hashlib.md5(original_url.encode('utf-8')).hexdigest()[:6]
+        short_url_hash = hashlib.md5(original_url.encode('utf-8')).hexdigest()[:6]
+        short_url = f'https://short.est/{short_url_hash}'
         db_manager.insert_url_pair(original_url, short_url)
-    return jsonify(original_url=original_url, short_url=f'https://short.est/{short_url}')
+    return jsonify(original_url=original_url, short_url=short_url)
 
 # decode route, returns the original url if found otherwise returns error message
 @app.route('/decode', methods=['POST'])
 @auth.login_required
 def decode():
-    short_url = request.json['short_url'].split('/')[-1]
+    short_url = request.json['short_url']
     original_url = db_manager.get_old_url(short_url)
     if original_url:
         return jsonify(original_url=original_url)
@@ -58,3 +59,24 @@ def decode():
 
 if __name__ == '__main__':
     app.run(port=8000, debug=True)
+
+'''
+    In order to test for encoding:
+        - Via terminal: 
+            curl -X POST http://localhost:8000/encode -H "Content-Type: application/json" -H "Authorization: Bearer secret-token-1" -d '{"url":"http://example.com"}'
+
+        - Via Postman:
+            Use Post request, enter http://localhost:8000/encode
+            In Authorization, put Bearer Token and enter "secret-token-1" as token
+            In body enter the url in JSON format
+    
+    In order to test for Decoding:
+        - Via terminal: 
+            curl -X POST http://localhost:8000/decode -H "Content-Type: application/json" -H "Authorization: Bearer secret-token-1"  -d '{"short_url":"https://short.est/a9b9f0"}'
+
+        - Via Postman:
+            Use Post request, enter http://localhost:8000/decode
+            In Authorization, put Bearer Token and enter "secret-token-1" as token
+            In body enter the short_url in JSON format
+
+'''
