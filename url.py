@@ -1,58 +1,58 @@
+'''
+Author: Ekansh Gupta
+Date Created: 4/15/2024
+Date Modified: 4/15/2024
+Purpose: Create the encode/decode routes and make sure user is authenticated
+Version: 1.0
+Change History: Initial
+'''
+
+from database import DatabaseManager
 from flask import Flask, request, jsonify
-#from flask_cors import CORS
-import sqlite3
 import hashlib
+from flask_httpauth import HTTPTokenAuth
 
 app = Flask(__name__)
-#CORS(app)
 
-DATABASE = 'url_database.db'
+# Create authentication
+auth = HTTPTokenAuth(scheme='Bearer')
 
-def get_db_connection():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    return conn
 
-def insert_url_pair(old_url, short_url):
-    conn = get_db_connection()
-    conn.execute('INSERT INTO url_map (old_url, short_url) VALUES (?, ?)', (old_url, short_url))
-    conn.commit()
-    conn.close()
+# From database.py 
+db_manager = DatabaseManager('url_database.db')
 
-def get_old_url(short_url):
-    conn = get_db_connection()
-    url_data = conn.execute('SELECT old_url FROM url_map WHERE short_url = ?', (short_url,)).fetchone()
-    conn.close()
-    return url_data
+# Token and user for authentication purposes 
+# (note: this will not work in production purposes only for demo purposes)
+tokens = {
+    "secret-token-1": "user1"
+}
 
-def get_short_url(old_url):
-    conn = get_db_connection()
-    url_data = conn.execute('SELECT short_url FROM url_map WHERE old_url = ?', (old_url,)).fetchone()
-    conn.close()
-    return url_data
+# Verifying to see if token exists and returning user 
+@auth.verify_token
+def verify_token(token):
+    if token in tokens:
+        return tokens[token]
+    return None
 
-def generate_short_url(url):
-    hasher = hashlib.md5()
-    hasher.update(url.encode('utf-8'))
-    return hasher.hexdigest()[:6]
-
+# encode route, returns a json with original_url and new short_url
 @app.route('/encode', methods=['POST'])
+@auth.login_required
 def encode():
     original_url = request.json['url']
-    existing_short_url = get_short_url(original_url)
-    if existing_short_url:
-        short_url = existing_short_url['short_url']
-    else:
-        short_url = generate_short_url(original_url)
-        insert_url_pair(original_url, short_url)
+    short_url = db_manager.get_short_url(original_url)
+    if not short_url:
+        short_url = hashlib.md5(original_url.encode('utf-8')).hexdigest()[:6]
+        db_manager.insert_url_pair(original_url, short_url)
     return jsonify(original_url=original_url, short_url=f'https://short.est/{short_url}')
 
+# decode route, returns the original url if found otherwise returns error message
 @app.route('/decode', methods=['POST'])
+@auth.login_required
 def decode():
     short_url = request.json['short_url'].split('/')[-1]
-    url_data = get_old_url(short_url)
-    if url_data:
-        return jsonify(original_url=url_data['old_url'])
+    original_url = db_manager.get_old_url(short_url)
+    if original_url:
+        return jsonify(original_url=original_url)
     else:
         return jsonify(error="Short URL not found"), 404
 
